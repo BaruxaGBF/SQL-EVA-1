@@ -9,4 +9,38 @@ from (select idreproducción,idusuario,
 	  from reproducciones RE ) as InfRexUsu
 GROUP BY idusuario
 
-SELECT C.título, I.nombre, ROUND((SELECT AVG(calificación) FROM Calificaciones WHERE Calificaciones.idCanción = C.idCanción), 1), SUM(cantidadReproducciones), CONCAT(ROUND(100.0 * SUM(cantidadReproducciones)/ (SELECT COUNT(idReproducción) FROM Reproducciones INNER JOIN Canciones USING(idCanción) WHERE Canciones.idintérpreteprincipal = C.idintérpreteprincipal ), 1), '%'), CONCAT(SUM(CASE WHEN díaDeLaSemana BETWEEN 1 AND 5 THEN cantidadReproducciones END), ' (', ROUND(100.0 * SUM(CASE WHEN díaDeLaSemana BETWEEN 1 AND 5 THEN cantidadReproducciones END)/SUM(cantidadReproducciones), 1), '%)') AS "reproducciones de lunes a viernes", CONCAT(SUM(CASE WHEN díaDeLaSemana BETWEEN 6 AND 7 THEN cantidadReproducciones END), ' (', ROUND(100.0 * SUM(CASE WHEN díaDeLaSemana BETWEEN 6 AND 7 THEN cantidadReproducciones END)/SUM(cantidadReproducciones), 1), '%)') AS "reproducciones de sábado y domingo" FROM Intérpretes I INNER JOIN Canciones C ON I.idIntérprete = C.idintérpreteprincipal INNER JOIN (SELECT idCanción, EXTRACT(ISODOW FROM fechaReproducción) AS díaDeLaSemana, COUNT(idReproducción) AS cantidadReproducciones FROM Reproducciones WHERE segundosReproducidos>=30 GROUP BY idCanción, EXTRACT(ISODOW FROM fechaReproducción)) AS R USING (idCanción) GROUP BY I.idIntérprete, C.idCanción ORDER BY SUM(cantidadReproducciones) DESC
+SELECT DISTINCT DENSE_RANK()OVER(
+                                 ORDER BY
+                                   (SELECT sum(montopagado)
+                                    FROM pagos P
+                                    WHERE P.idusuario=Us.idusuario) DESC) AS "Top pagado en planes",
+                CONCAT(Us.nombres, ' ', Us.apellidos) AS "Nombre Completo",
+                Us.email AS "Email",
+                InfRexUsu.RTxU AS "Reproducciones totales",
+                CONCAT('(', count(CASE WHEN DiasR BETWEEN 1 AND 5 THEN idreproducciónEND), ') ', 
+                                                      CONCAT((100*(count(CASE
+                                                           WHEN DiasR BETWEEN 1 AND 5 THEN idreproducción
+                                                       END)))/InfRexUsu.RTxU, '%')) AS "Porcentage de reproduccion durante semana",
+                CONCAT('(', count(CASE WHEN DiasR BETWEEN 6 AND 7 THEN idreproducción END), ') ', 
+                                  CONCAT((100*(count(CASE
+                                                      WHEN DiasR BETWEEN 6 AND 7 THEN idreproducción
+                                                     END)))/InfRexUsu.RTxU, '%')) AS "Porcentage de reproduccion durante fin de semana",
+                (InfRexUsu.UFR-InfRexUsu.LFR)/31 AS "meses activo",
+  (SELECT sum(montopagado)
+   FROM pagos P
+   WHERE P.idusuario=Us.idusuario) AS "Total Pagado en planes"
+FROM usuarios US
+INNER JOIN
+  (SELECT idreproducción,
+          idusuario,
+          count(RE.idreproducción) over(PARTITION BY idusuario) AS RTxU,
+          Max(RE.fechareproducción) over(PARTITION BY idusuario) AS UFR,
+          min(RE.fechareproducción) over(PARTITION BY idusuario) AS LFR,
+          EXTRACT(ISODOW
+                  FROM fechaReproducción) AS DiasR
+   FROM reproducciones RE
+   WHERE segundosReproducidos>=60) AS InfRexUsu USING(idusuario)
+GROUP BY Us.idusuario,
+         InfRexUsu.RTxU,
+         InfRexUsu.UFR,
+         InfRexUsu.LFR
